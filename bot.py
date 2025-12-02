@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 import os
 
-TOKEN = os.getenv("TOKEN")  # Railway will read token from environment variable
+TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk' # Railway will read token from environment variable
 
 
 def seed_to_50_bits(seed):

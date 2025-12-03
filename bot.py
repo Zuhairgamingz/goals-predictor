@@ -4,25 +4,26 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 import os
 
 
-TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk'  # Railway injects this
+TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk'  # Railway provides this
 
 
-# ----------- HEX → 256-bit binary -----------
+# ----------- HEX → BIT CONVERSION -----------
 def sha256hex_to_bits(hexhash: str) -> str:
     return bin(int(hexhash, 16))[2:].zfill(256)
 
 
+# ----------- CORRECTED RESULT EXTRACTION -----------
 def result_25_bits_from_hex(hexhash: str) -> str:
     bits = sha256hex_to_bits(hexhash)
-    return bits[:25]  # first 25 bits (mines)
+    return bits[80:105]  # exact 25-bit slice
 
 
 def result_50_bits_from_hex(hexhash: str) -> str:
     bits = sha256hex_to_bits(hexhash)
-    return bits[:50]  # first 50 bits (goals)
+    return bits[80:130]  # exact 50-bit slice
 
 
-# ----------- Start Command -----------
+# ----------- START COMMAND -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("25bits mines", callback_data="25")],
@@ -30,39 +31,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        "Send me an *encrypted SHA-256 hex* and choose output type:",
+        "Send your *encrypted SHA-256 hex* (64 chars), then choose result type:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
-# ----------- Mode Selection -----------
+# ----------- MODE SELECTION -----------
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    mode = query.data
-    context.user_data["mode"] = mode
+    context.user_data["mode"] = query.data
 
     await query.edit_message_text(
-        f"Send your *encrypted SHA-256* for **{mode}-bit result**:",
+        f"Send your *encrypted SHA-256* to generate **{query.data}-bit result**:",
         parse_mode="Markdown"
     )
 
     context.user_data["waiting"] = True
 
 
-# ----------- Validate & Process Hex Input -----------
+# ----------- PROCESS INPUT HEX -----------
 async def hex_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("waiting"):
         return
 
     hexhash = update.message.text.strip().lower()
 
-    # Validate SHA256 hex
+    # Validate SHA-256 hex input
     if not re.fullmatch(r"[0-9a-f]{64}", hexhash):
         await update.message.reply_text(
-            "❌ Invalid hash!\nMust be **64 hex characters** (SHA-256).")
+            "❌ Invalid hash!\nMust be **64 hex characters** (SHA-256)."
+        )
         return
 
     mode = context.user_data["mode"]
@@ -89,7 +90,7 @@ async def hex_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["waiting"] = False
 
 
-# ----------- Exit Handler -----------
+# ----------- EXIT BUTTON -----------
 async def exit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -97,7 +98,7 @@ async def exit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("Session ended.\nUse /start to begin again.")
 
 
-# ----------- Main -----------
+# ----------- MAIN LAUNCHER -----------
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 

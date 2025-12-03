@@ -1,61 +1,37 @@
-import base64
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 import os
 
-TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk'  # Railway provides this
+
+TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk'  # Railway injects this
 
 
-# ----------- Correct Base64 decoding (21-byte rule) -----------
-def decode_seed(seed):
-    # try 1 "="
-    try:
-        raw = base64.b64decode(seed + "=")
-        if len(raw) == 21:
-            return raw
-    except:
-        pass
-
-    # try "=="
-    try:
-        raw = base64.b64decode(seed + "==")
-        if len(raw) == 21:
-            return raw
-    except:
-        pass
-
-    # fallback using mod-4 padding
-    missing = len(seed) % 4
-    seed2 = seed + "=" * (4 - missing) if missing else seed
-    raw = base64.b64decode(seed2)
-
-    # force to 21 bytes (your system standard)
-    if len(raw) >= 21:
-        return raw[:21]
-    return raw
+# ----------- HEX → 256-bit binary -----------
+def sha256hex_to_bits(hexhash: str) -> str:
+    return bin(int(hexhash, 16))[2:].zfill(256)
 
 
-# ----------- Bit converters (big-endian, correct) -----------
-def seed_to_25_bits(seed):
-    raw = decode_seed(seed)
-    binary = ''.join(f'{b:08b}' for b in raw)
-    return binary[:25]
+def result_25_bits_from_hex(hexhash: str) -> str:
+    bits = sha256hex_to_bits(hexhash)
+    return bits[:25]  # first 25 bits (mines)
 
 
-def seed_to_50_bits(seed):
-    raw = decode_seed(seed)
-    binary = ''.join(f'{b:08b}' for b in raw)
-    return binary[:50]
+def result_50_bits_from_hex(hexhash: str) -> str:
+    bits = sha256hex_to_bits(hexhash)
+    return bits[:50]  # first 50 bits (goals)
 
 
 # ----------- Start Command -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("25bits mines", callback_data="25bits")],
-        [InlineKeyboardButton("50bits goals", callback_data="50bits")]
+        [InlineKeyboardButton("25bits mines", callback_data="25")],
+        [InlineKeyboardButton("50bits goals", callback_data="50")]
     ]
+
     await update.message.reply_text(
-        "Choose your conversion type:",
+        "Send me an *encrypted SHA-256 hex* and choose output type:",
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -65,40 +41,42 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "25bits":
-        context.user_data["mode"] = "25"
-        await query.edit_message_text("Send your seed for **25-bit mines**:", parse_mode="Markdown")
+    mode = query.data
+    context.user_data["mode"] = mode
 
-    elif query.data == "50bits":
-        context.user_data["mode"] = "50"
-        await query.edit_message_text("Send your seed for **50-bit goals**:", parse_mode="Markdown")
+    await query.edit_message_text(
+        f"Send your *encrypted SHA-256* for **{mode}-bit result**:",
+        parse_mode="Markdown"
+    )
 
-    context.user_data["waiting_for_seed"] = True
+    context.user_data["waiting"] = True
 
 
-# ----------- Process Uploaded Seed -----------
-async def seed_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not context.user_data.get("waiting_for_seed"):
+# ----------- Validate & Process Hex Input -----------
+async def hex_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("waiting"):
         return
 
-    seed = update.message.text.strip()
-    mode = context.user_data.get("mode")
+    hexhash = update.message.text.strip().lower()
 
-    try:
-        if mode == "25":
-            result = seed_to_25_bits(seed)
-            label = "25-bit mines"
-        else:
-            result = seed_to_50_bits(seed)
-            label = "50-bit goals"
-    except:
-        await update.message.reply_text("❌ Invalid seed! Please send a correct Base64 seed.")
+    # Validate SHA256 hex
+    if not re.fullmatch(r"[0-9a-f]{64}", hexhash):
+        await update.message.reply_text(
+            "❌ Invalid hash!\nMust be **64 hex characters** (SHA-256).")
         return
+
+    mode = context.user_data["mode"]
+
+    if mode == "25":
+        result = result_25_bits_from_hex(hexhash)
+        label = "25-bit mines"
+    else:
+        result = result_50_bits_from_hex(hexhash)
+        label = "50-bit goals"
 
     keyboard = [
-        [InlineKeyboardButton("25bits mines", callback_data="25bits")],
-        [InlineKeyboardButton("50bits goals", callback_data="50bits")],
+        [InlineKeyboardButton("25bits mines", callback_data="25")],
+        [InlineKeyboardButton("50bits goals", callback_data="50")],
         [InlineKeyboardButton("Exit", callback_data="exit")]
     ]
 
@@ -108,25 +86,26 @@ async def seed_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    context.user_data["waiting_for_seed"] = False
+    context.user_data["waiting"] = False
 
 
-# ----------- Exit Button -----------
+# ----------- Exit Handler -----------
 async def exit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
     await query.edit_message_text("Session ended.\nUse /start to begin again.")
 
 
-# ----------- Main Launcher -----------
+# ----------- Main -----------
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(menu_handler, pattern="25bits"))
-    app.add_handler(CallbackQueryHandler(menu_handler, pattern="50bits"))
+    app.add_handler(CallbackQueryHandler(menu_handler, pattern="25"))
+    app.add_handler(CallbackQueryHandler(menu_handler, pattern="50"))
     app.add_handler(CallbackQueryHandler(exit_handler, pattern="exit"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, seed_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, hex_input))
 
     print("Bot is running...")
     app.run_polling()

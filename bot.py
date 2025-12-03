@@ -6,27 +6,46 @@ import os
 TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk'  # Railway provides this
 
 
-# ----------- Base64 Padding Fix -----------
-def fix_base64(seed):
+# ----------- Correct Base64 decoding (21-byte rule) -----------
+def decode_seed(seed):
+    # try 1 "="
+    try:
+        raw = base64.b64decode(seed + "=")
+        if len(raw) == 21:
+            return raw
+    except:
+        pass
+
+    # try "=="
+    try:
+        raw = base64.b64decode(seed + "==")
+        if len(raw) == 21:
+            return raw
+    except:
+        pass
+
+    # fallback using mod-4 padding
     missing = len(seed) % 4
-    if missing != 0:
-        seed += "=" * (4 - missing)
-    return seed
+    seed2 = seed + "=" * (4 - missing) if missing else seed
+    raw = base64.b64decode(seed2)
+
+    # force to 21 bytes (your system standard)
+    if len(raw) >= 21:
+        return raw[:21]
+    return raw
 
 
-# ----------- Converters (Correct Big-Endian) -----------
+# ----------- Bit converters (big-endian, correct) -----------
 def seed_to_25_bits(seed):
-    seed = fix_base64(seed)
-    raw = base64.b64decode(seed)
-    binary = ''.join(f'{byte:08b}' for byte in raw)  # correct conversion
-    return binary[:25]  # first 25 bits
+    raw = decode_seed(seed)
+    binary = ''.join(f'{b:08b}' for b in raw)
+    return binary[:25]
 
 
 def seed_to_50_bits(seed):
-    seed = fix_base64(seed)
-    raw = base64.b64decode(seed)
-    binary = ''.join(f'{byte:08b}' for byte in raw)  # correct conversion
-    return binary[:50]  # first 50 bits
+    raw = decode_seed(seed)
+    binary = ''.join(f'{b:08b}' for b in raw)
+    return binary[:50]
 
 
 # ----------- Start Command -----------
@@ -57,7 +76,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["waiting_for_seed"] = True
 
 
-# ----------- Process Seed -----------
+# ----------- Process Uploaded Seed -----------
 async def seed_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.user_data.get("waiting_for_seed"):
@@ -74,7 +93,7 @@ async def seed_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = seed_to_50_bits(seed)
             label = "50-bit goals"
     except:
-        await update.message.reply_text("❌ Invalid seed! Base64 required.")
+        await update.message.reply_text("❌ Invalid seed! Please send a correct Base64 seed.")
         return
 
     keyboard = [

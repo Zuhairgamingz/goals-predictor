@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 import os
 
-TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk'  # Railway will provide this
+TOKEN = os.getenv("TOKEN") or '7948540215:AAGHaPFqn2Sdmy0OCJwlHsuOHZLvy_pIwUk'  # Railway provides this
 
 
 # ----------- Base64 Padding Fix -----------
@@ -14,19 +14,19 @@ def fix_base64(seed):
     return seed
 
 
-# ----------- Converters -----------
+# ----------- Converters (Correct Big-Endian) -----------
 def seed_to_25_bits(seed):
     seed = fix_base64(seed)
     raw = base64.b64decode(seed)
-    binary = ''.join(f'{b:08b}' for b in raw)
-    return binary[:25]
+    binary = ''.join(f'{byte:08b}' for byte in raw)  # correct conversion
+    return binary[:25]  # first 25 bits
 
 
 def seed_to_50_bits(seed):
     seed = fix_base64(seed)
     raw = base64.b64decode(seed)
-    binary = ''.join(f'{b:08b}' for b in raw)
-    return binary[:50]
+    binary = ''.join(f'{byte:08b}' for byte in raw)  # correct conversion
+    return binary[:50]  # first 50 bits
 
 
 # ----------- Start Command -----------
@@ -69,10 +69,12 @@ async def seed_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if mode == "25":
             result = seed_to_25_bits(seed)
+            label = "25-bit mines"
         else:
             result = seed_to_50_bits(seed)
+            label = "50-bit goals"
     except:
-        await update.message.reply_text("❌ Invalid seed! Make sure it's correct Base64.")
+        await update.message.reply_text("❌ Invalid seed! Base64 required.")
         return
 
     keyboard = [
@@ -80,8 +82,6 @@ async def seed_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("50bits goals", callback_data="50bits")],
         [InlineKeyboardButton("Exit", callback_data="exit")]
     ]
-
-    label = "25-bit mines" if mode == "25" else "50-bit goals"
 
     await update.message.reply_text(
         f"✅ Result for **{label}**:\n```\n{result}\n```",
